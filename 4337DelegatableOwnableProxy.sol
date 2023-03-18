@@ -1,14 +1,17 @@
 pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
+
 contract Ownable {
     address public owner;
 
     constructor() {
-        owner = msg.sender;
+        owner = _msgSender();
     }
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Only the owner can call this function");
+        require(_msgSender() == owner, "Ownable: caller is not the owner");
         _;
     }
 
@@ -17,29 +20,25 @@ contract Ownable {
     }
 }
 
-contract OwnableProxy {
-    address public implementation;
-    address public owner;
+contract OwnableProxy is ERC1967Proxy, Context {
+    constructor(address _logic, bytes memory _data) ERC1967Proxy(_logic, _data) {}
 
-    constructor(address _implementation) {
-        implementation = _implementation;
-        owner = msg.sender;
-    }
-
-    fallback() external payable {
-        address _impl = implementation;
-        assembly {
-            calldatacopy(0, 0, calldatasize())
-            let result := delegatecall(gas(), _impl, 0, calldatasize(), 0, 0)
-            returndatacopy(0, 0, returndatasize())
-            switch result
-            case 0 { revert(0, returndatasize()) }
-            default { return(0, returndatasize()) }
+    function _msgSender() internal view override returns (address sender) {
+        if (msg.sender == address(this)) {
+            bytes memory array = msg.data;
+            uint256 index = msg.data.length;
+            assembly {
+                // Load the 32 bytes word from memory with the address on the lower 20 bytes, and mask those.
+                sender := and(mload(add(array, index)), 0xffffffffffffffffffffffffffffffffffffffff)
+            }
+        } else {
+            sender = msg.sender;
         }
+        return sender;
     }
 
     function transferOwnership(address newOwner) public onlyOwner {
-        Ownable(implementation).transferOwnership(newOwner);
+        Ownable(payable(_implementation())).transferOwnership(newOwner);
     }
 }
 
